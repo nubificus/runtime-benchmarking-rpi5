@@ -1,0 +1,5 @@
+apiVersion: v2
+name: c-http-server-bench
+description: HTTP workload for runtime benchmarking
+type: application
+version: 0.1.0

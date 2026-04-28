@@ -1,0 +1,4 @@
+service:
+  type: NodePort
+  nodePort: 30113
+  port: 9115

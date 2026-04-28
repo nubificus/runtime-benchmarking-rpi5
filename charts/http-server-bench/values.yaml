@@ -1,0 +1,9 @@
+testId: t001
+runtimeClassName: runc
+replicas: 2
+
+image: "<IMAGE>"
+variant: normal
+
+containerName: c-http-server
+servicePort: 80

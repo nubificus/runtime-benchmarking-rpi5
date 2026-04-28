@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: c-http-server
+    test_id: {{ .Values.testId }}
+    runtime_class: {{ .Values.runtimeClassName }}
+    variant: {{ .Values.variant }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: c-http-server
+      test_id: {{ .Values.testId }}
+      runtime_class: {{ .Values.runtimeClassName }}
+      variant: {{ .Values.variant }}
+  template:
+    metadata:
+      labels:
+        app: c-http-server
+        test_id: {{ .Values.testId }}
+        runtime_class: {{ .Values.runtimeClassName }}
+        variant: {{ .Values.variant }}
+    spec:
+      runtimeClassName: {{ .Values.runtimeClassName }}
+      containers:
+        - name: {{ .Values.containerName }}
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.servicePort }}
