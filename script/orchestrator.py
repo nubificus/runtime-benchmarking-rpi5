@@ -23,8 +23,9 @@ def utc(ts):
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
-def helm_deploy(ns, release, chart, set_args):
+def helm_deploy(ns, release, chart, set_args, extra_args=()):
     cmd = ["helm", "upgrade", "--install", release, chart, "-n", ns, "--create-namespace"]
+    cmd += list(extra_args)
     for s in set_args:
         cmd += ["--set", s]
     run(cmd)
