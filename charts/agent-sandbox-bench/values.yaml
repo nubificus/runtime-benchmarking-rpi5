@@ -1,0 +1,20 @@
+testId: t001
+runtimeClassName: runc
+variant: normal
+
+# sandbox: one bare Sandbox per replica
+# claim:   SandboxTemplate + SandboxWarmPool + one SandboxClaim per replica
+mode: sandbox
+replicas: 2
+# claim mode only. 0 makes every claim cold-start from the template.
+warmPoolReplicas: 0
+
+image: "<IMAGE>"
+app: c-http-server
+containerName: c-http-server
+containerPort: 80
+
+# Per-sandbox headless Service created by the controller.
+service: false
+# urunc sizes the microVM from the limits (default 256Mi / 1 vCPU).
+resources: {}

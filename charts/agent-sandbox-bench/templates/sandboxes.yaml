@@ -1,0 +1,15 @@
+{{- if eq .Values.mode "sandbox" }}
+{{- range $i := until (int .Values.replicas) }}
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: {{ $.Release.Name }}-{{ $i }}
+  labels:
+    {{- include "agent-sandbox-bench.labels" $ | nindent 4 }}
+spec:
+  service: {{ $.Values.service }}
+  podTemplate:
+    {{- include "agent-sandbox-bench.podTemplate" $ | nindent 4 }}
+{{- end }}
+{{- end }}

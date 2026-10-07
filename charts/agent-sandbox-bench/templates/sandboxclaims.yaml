@@ -1,0 +1,16 @@
+{{- if eq .Values.mode "claim" }}
+{{- range $i := until (int .Values.replicas) }}
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ $i }}
+  labels:
+    {{- include "agent-sandbox-bench.labels" $ | nindent 4 }}
+spec:
+  warmPoolRef:
+    name: {{ $.Release.Name }}
+  lifecycle:
+    shutdownPolicy: Delete
+{{- end }}
+{{- end }}
