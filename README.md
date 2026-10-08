@@ -158,3 +158,139 @@ csv-data/
 └── timeline_pods_ready.csv
 ```
 ---
+
+## agent-sandbox benchmarking
+
+The same workloads can be deployed through [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
+instead of a `Deployment`. Each replica becomes a `Sandbox` (one pod each), either created directly
+or handed out by a `SandboxClaim` from a `SandboxWarmPool`.
+
+```text
+charts/agent-sandbox-bench/         # Helm chart: Sandbox / SandboxTemplate + SandboxWarmPool + SandboxClaim
+script/agent_sandbox_orchestrator.py
+workloads/python-runtime-sandbox/   # FastAPI example from agent-sandbox (port 8888)
+```
+
+### Prerequisites
+
+1. The `RuntimeClass` resources from [RuntimeClass setup](#runtimeclass-setup).
+   For urunc, the agent-sandbox [urunc example](https://github.com/kubernetes-sigs/agent-sandbox/tree/main/examples/urunc-sandbox)
+   ships a `setup.sh --flavor k3s` that installs urunc-deploy and registers the `urunc` RuntimeClass.
+2. The agent-sandbox controller with extensions (needed for `claim` mode):
+
+```bash
+export VERSION=v1.0.2
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${VERSION}/sandbox-with-extensions.yaml
+kubectl -n agent-sandbox-system rollout status deployment/agent-sandbox-controller
+kubectl get crd | grep agents.x-k8s.io
+```
+
+3. Blackbox Exporter, as for the `Deployment` runs (NodePort `30113`).
+
+### Modes
+
+| Mode      | Objects created                                                  | What is measured                                  |
+| --------- | ---------------------------------------------------------------- | ------------------------------------------------- |
+| `sandbox` | `replicas` × `Sandbox`                                           | Cold start through the Sandbox controller         |
+| `claim`   | `SandboxTemplate`, `SandboxWarmPool`, `replicas` × `SandboxClaim` | Claim → Ready, warm (adopted) and/or cold          |
+
+In `claim` mode the template and warm pool are installed first and the script waits until
+`warmPoolReplicas` sandboxes are ready (untimed). The timer starts when the claims are created.
+
+- `--warm-pool-replicas` >= `--replicas`: every claim adopts a warm sandbox.
+- `--warm-pool-replicas 0`: every claim cold-starts from the template.
+- In between: a mix. The summary records how many were `warm` / `cold`
+  (from the `agents.x-k8s.io/launch-type` label on each Sandbox).
+
+### Running a benchmark
+
+Replace `<NODE_IP>` in `--blackbox` (or the default in the script) with the node IP.
+The selector must match the chart labels (`app` is `c-http-server` by default,
+`python-runtime` with `values-python.yaml`).
+
+C HTTP server, bare Sandboxes on urunc:
+
+```bash
+python3 script/agent_sandbox_orchestrator.py \
+  --chart ./charts/agent-sandbox-bench \
+  --release as-urunc-hvt-mirage-t001 \
+  --mode sandbox \
+  --replicas 100 \
+  --set runtimeClassName=urunc \
+  --set image='REGISTRY/IMAGE:TAG' \
+  --set testId=t001 \
+  --set variant=hvt-mirage \
+  --selector 'app=c-http-server,test_id=t001,runtime_class=urunc,variant=hvt-mirage' \
+  --blackbox http://<NODE_IP>:30113 \
+  --test-id t001 \
+  --runtime-class urunc \
+  --variant hvt-mirage
+```
+
+C HTTP server, 100 claims against a 100-sandbox warm pool on runc:
+
+```bash
+python3 script/agent_sandbox_orchestrator.py \
+  --chart ./charts/agent-sandbox-bench \
+  --release as-runc-claim-t001 \
+  --mode claim \
+  --replicas 100 \
+  --warm-pool-replicas 100 \
+  --set runtimeClassName=runc \
+  --set image='REGISTRY/IMAGE:TAG' \
+  --set testId=t001 \
+  --set variant=normal \
+  --selector 'app=c-http-server,test_id=t001,runtime_class=runc,variant=normal' \
+  --blackbox http://<NODE_IP>:30113 \
+  --test-id t001 \
+  --runtime-class runc \
+  --variant normal
+```
+
+Python runtime example (see [workloads/python-runtime-sandbox](workloads/python-runtime-sandbox/README.md)
+for building the images), cold claims on urunc:
+
+```bash
+python3 script/agent_sandbox_orchestrator.py \
+  --chart ./charts/agent-sandbox-bench \
+  --values ./charts/agent-sandbox-bench/values-python.yaml \
+  --release as-urunc-python-t001 \
+  --mode claim \
+  --replicas 20 \
+  --warm-pool-replicas 0 \
+  --port 8888 \
+  --set runtimeClassName=urunc \
+  --set image='REGISTRY/python-runtime-sandbox-urunc:TAG' \
+  --set testId=t001 \
+  --set variant=qemu-linux \
+  --selector 'app=python-runtime,test_id=t001,runtime_class=urunc,variant=qemu-linux' \
+  --blackbox http://<NODE_IP>:30113 \
+  --test-id t001 \
+  --runtime-class urunc \
+  --variant qemu-linux
+```
+
+urunc sizes the microVM from the container limits (default 256 MiB / 1 vCPU). To change it, add e.g.
+`--set resources.limits.memory=512Mi --set resources.limits.cpu=1`.
+
+### Behavior
+
+- Readiness is the `Ready` condition of the `Sandbox` (`sandbox` mode) or `SandboxClaim` (`claim` mode).
+- HTTP availability is probed through Blackbox Exporter at `http://<podIP>:<--port><--path>`,
+  using the pod IP from the object's status. Probes run concurrently.
+- `elapsed_seconds` in the timelines is wall-clock time since `t0`, sampled every 0.5 s.
+- As in `orchestrator.py`, `t0` is taken right before `helm upgrade --install`.
+- The release is always uninstalled (also on timeout). The script then waits for the
+  selected pods to disappear and sleeps `--cooldown` seconds (default 45).
+
+### Output
+
+| File                                  | Content                                               |
+| ------------------------------------- | ----------------------------------------------------- |
+| `agent_sandbox_test.csv`              | One summary row per run (latencies, warm/cold counts) |
+| `timeline_sandbox_ready.csv`          | Ready objects over time                               |
+| `timeline_sandbox_http_success.csv`   | Sandboxes answering HTTP over time                    |
+
+All rows carry `test_id`, `runtime_class`, `variant` and `mode`.
+
+---
